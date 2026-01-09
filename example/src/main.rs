@@ -5,12 +5,13 @@ use iced::{window, Element, Length, Size, Task};
 use iced_gif::widget::gif;
 
 fn main() {
-    iced::application(App::title, App::update, App::view)
+    iced::application(App::new, App::update, App::view)
+        .title(App::title)
         .window(window::Settings {
             size: Size::new(498.0, 164.0),
             ..Default::default()
         })
-        .run_with(App::new)
+        .run()
         .unwrap()
 }
 
@@ -46,7 +47,7 @@ impl App {
         Task::none()
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         if let Some(frames) = self.frames.as_ref() {
             container(gif(frames))
                 .center_x(Length::Fill)

@@ -4,16 +4,17 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use iced_runtime::Task;
+use iced_widget::core::border;
 #[allow(unused)]
 use iced_widget::core::image::Image;
 use iced_widget::core::image::{self, FilterMethod, Handle};
 use iced_widget::core::mouse::Cursor;
 use iced_widget::core::widget::{tree, Tree};
 use iced_widget::core::{
-    event, layout, renderer, window, Clipboard, ContentFit, Element, Event, Layout, Length, Point,
-    Rectangle, Rotation, Shell, Size, Vector, Widget,
+    layout, renderer, window, Clipboard, ContentFit, Element, Event, Layout, Length, Rectangle,
+    Rotation, Shell, Size, Widget,
 };
-use iced_widget::runtime::Task;
 use image_rs::codecs::gif;
 use image_rs::{AnimationDecoder, ImageDecoder};
 
@@ -149,10 +150,14 @@ pub struct Gif<'a> {
     frames: &'a Frames,
     width: Length,
     height: Length,
+    crop: Option<Rectangle<u32>>,
+    border_radius: border::Radius,
     content_fit: ContentFit,
     filter_method: FilterMethod,
     rotation: Rotation,
     opacity: f32,
+    scale: f32,
+    expand: bool,
 }
 
 impl<'a> Gif<'a> {
@@ -162,22 +167,38 @@ impl<'a> Gif<'a> {
             frames,
             width: Length::Shrink,
             height: Length::Shrink,
+            crop: None,
+            border_radius: border::Radius::default(),
             content_fit: ContentFit::default(),
             filter_method: FilterMethod::default(),
             rotation: Rotation::default(),
             opacity: 1.0,
+            scale: 1.0,
+            expand: false,
         }
     }
-
-    /// Sets the width of the [`Gif`] boundaries.
-    pub fn width(mut self, width: Length) -> Self {
-        self.width = width;
+    /// Sets the width of the [`Image`] boundaries.
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = width.into();
         self
     }
 
-    /// Sets the height of the [`Gif`] boundaries.
-    pub fn height(mut self, height: Length) -> Self {
-        self.height = height;
+    /// Sets the height of the [`Image`] boundaries.
+    pub fn height(mut self, height: impl Into<Length>) -> Self {
+        self.height = height.into();
+        self
+    }
+
+    /// Sets whether the [`Image`] should try to fill as much space
+    /// available as possible while keeping aspect ratio and without
+    /// allocating extra space in any axis with a [`Length::Shrink`]
+    /// sizing strategy.
+    ///
+    /// This is similar to using [`Length::Fill`] for both the
+    /// [`width`](Self::width) and the [`height`](Self::height),
+    /// but without the downside of blank space.
+    pub fn expand(mut self, expand: bool) -> Self {
+        self.expand = expand;
         self
     }
 
@@ -207,6 +228,42 @@ impl<'a> Gif<'a> {
     /// and `1.0` meaning completely opaque.
     pub fn opacity(mut self, opacity: impl Into<f32>) -> Self {
         self.opacity = opacity.into();
+        self
+    }
+
+    /// Sets the scale of the [`Image`].
+    ///
+    /// The region of the [`Image`] drawn will be scaled from the center by the given scale factor.
+    /// This can be useful to create certain effects and animations, like smooth zoom in / out.
+    pub fn scale(mut self, scale: impl Into<f32>) -> Self {
+        self.scale = scale.into();
+        self
+    }
+
+    /// Crops the [`Image`] to the given region described by the [`Rectangle`] in absolute
+    /// coordinates.
+    ///
+    /// Cropping is done before applying any transformation or [`ContentFit`]. In practice,
+    /// this means that cropping an [`Image`] with this method should produce the same result
+    /// as cropping it externally (e.g. with an image editor) and creating a new [`Handle`]
+    /// for the cropped version.
+    ///
+    /// However, this method is much more efficient; since it just leverages scissoring during
+    /// rendering and no image cropping actually takes place. Instead, it reuses the existing
+    /// image allocations and should be as efficient as not cropping at all!
+    ///
+    /// The `region` coordinates will be clamped to the image dimensions, if necessary.
+    pub fn crop(mut self, region: Rectangle<u32>) -> Self {
+        self.crop = Some(region);
+        self
+    }
+
+    /// Sets the [`border::Radius`] of the [`Image`].
+    ///
+    /// Currently, it will only be applied around the rectangular bounding box
+    /// of the [`Image`].
+    pub fn border_radius(mut self, border_radius: impl Into<border::Radius>) -> Self {
+        self.border_radius = border_radius.into();
         self
     }
 }
@@ -249,7 +306,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -260,22 +317,24 @@ where
             &self.frames.first.handle,
             self.width,
             self.height,
+            self.crop,
             self.content_fit,
             self.rotation,
+            self.expand,
         )
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         _layout: Layout<'_>,
         _cursor: Cursor,
         _renderer: &Renderer,
         _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         let state = tree.state.downcast_mut::<State>();
 
         if let Event::Window(window::Event::RedrawRequested(now)) = event {
@@ -286,15 +345,13 @@ where
 
                 state.current = self.frames.frames[state.index].clone().into();
 
-                shell.request_redraw(window::RedrawRequest::At(now + state.current.frame.delay));
+                shell.request_redraw_at(*now + state.current.frame.delay);
             } else {
                 let remaining = state.current.frame.delay - elapsed;
 
-                shell.request_redraw(window::RedrawRequest::At(now + remaining));
+                shell.request_redraw_at(*now + remaining);
             }
         }
-
-        event::Status::Ignored
     }
 
     fn draw(
@@ -309,56 +366,18 @@ where
     ) {
         let state = tree.state.downcast_ref::<State>();
 
-        // Pulled from iced_native::widget::<Image as Widget>::draw
-        //
-        // TODO: export iced_native::widget::image::draw as standalone function
-        {
-            let Size { width, height } = renderer.measure_image(&state.current.frame.handle);
-            let image_size = Size::new(width as f32, height as f32);
-            let rotated_size = self.rotation.apply(image_size);
-
-            let bounds = layout.bounds();
-            let adjusted_fit = self.content_fit.fit(rotated_size, bounds.size());
-
-            let scale = Vector::new(
-                adjusted_fit.width / rotated_size.width,
-                adjusted_fit.height / rotated_size.height,
-            );
-
-            let final_size = image_size * scale;
-
-            let position = match self.content_fit {
-                ContentFit::None => Point::new(
-                    bounds.x + (rotated_size.width - adjusted_fit.width) / 2.0,
-                    bounds.y + (rotated_size.height - adjusted_fit.height) / 2.0,
-                ),
-                _ => Point::new(
-                    bounds.center_x() - final_size.width / 2.0,
-                    bounds.center_y() - final_size.height / 2.0,
-                ),
-            };
-
-            let drawing_bounds = Rectangle::new(position, final_size);
-
-            let render = |renderer: &mut Renderer| {
-                renderer.draw_image(
-                    image::Image {
-                        handle: state.current.frame.handle.clone(),
-                        filter_method: self.filter_method,
-                        rotation: self.rotation.radians(),
-                        opacity: self.opacity,
-                        snap: true,
-                    },
-                    drawing_bounds,
-                );
-            };
-
-            if adjusted_fit.width > bounds.width || adjusted_fit.height > bounds.height {
-                renderer.with_layer(bounds, render);
-            } else {
-                render(renderer);
-            }
-        }
+        iced_widget::image::draw(
+            renderer,
+            layout,
+            &state.current.frame.handle,
+            self.crop,
+            self.border_radius,
+            self.content_fit,
+            self.filter_method,
+            self.rotation,
+            self.opacity,
+            self.scale,
+        );
     }
 }
 
