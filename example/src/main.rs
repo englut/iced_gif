@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use iced::widget::{container, row};
 use iced::{window, Element, Length, Size, Task};
@@ -22,7 +23,7 @@ enum Message {
 
 #[derive(Default)]
 struct App {
-    frames: Option<gif::Frames>,
+    frames: Option<Arc<gif::Frames>>,
 }
 
 impl App {
@@ -42,14 +43,14 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         let Message::Loaded(frames) = message;
 
-        self.frames = frames.ok();
+        self.frames = frames.ok().map(Arc::new);
 
         Task::none()
     }
 
     fn view(&self) -> Element<'_, Message> {
         if let Some(frames) = self.frames.as_ref() {
-            container(gif(frames))
+            container(gif(frames.clone()))
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .into()

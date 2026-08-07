@@ -2,6 +2,7 @@
 use std::fmt;
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use iced_runtime::Task;
@@ -12,7 +13,7 @@ use iced_widget::core::image::{self, FilterMethod, Handle};
 use iced_widget::core::mouse::Cursor;
 use iced_widget::core::widget::{tree, Tree};
 use iced_widget::core::{
-    layout, renderer, window, Clipboard, ContentFit, Element, Event, Layout, Length, Rectangle,
+    layout, renderer, window, ContentFit, Element, Event, Layout, Length, Rectangle,
     Rotation, Shell, Size, Widget,
 };
 use image_rs::codecs::gif;
@@ -35,6 +36,7 @@ pub enum Error {
 }
 
 /// The frames of a decoded gif
+#[derive(Clone)]
 pub struct Frames {
     first: Frame,
     frames: Vec<Frame>,
@@ -146,8 +148,8 @@ impl From<Frame> for Current {
 
 /// A frame that displays a GIF while keeping aspect ratio
 #[derive(Debug)]
-pub struct Gif<'a> {
-    frames: &'a Frames,
+pub struct Gif {
+    frames: Arc<Frames>,
     width: Length,
     height: Length,
     crop: Option<Rectangle<u32>>,
@@ -160,9 +162,9 @@ pub struct Gif<'a> {
     expand: bool,
 }
 
-impl<'a> Gif<'a> {
+impl Gif {
     /// Creates a new [`Gif`] with the given [`Frames`]
-    pub fn new(frames: &'a Frames) -> Self {
+    pub fn new(frames: Arc<Frames>) -> Self {
         Gif {
             frames,
             width: Length::Shrink,
@@ -268,7 +270,7 @@ impl<'a> Gif<'a> {
     }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Gif<'a>
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Gif
 where
     Renderer: image::Renderer<Handle = Handle>,
 {
@@ -288,7 +290,7 @@ where
         })
     }
 
-    fn diff(&self, tree: &mut Tree) {
+    fn diff(&mut self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<State>();
 
         // Reset state if new gif Frames is used w/
@@ -331,7 +333,6 @@ where
         _layout: Layout<'_>,
         _cursor: Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
@@ -381,11 +382,11 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Gif<'a>> for Element<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> From<Gif> for Element<'a, Message, Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = Handle> + 'a,
 {
-    fn from(gif: Gif<'a>) -> Element<'a, Message, Theme, Renderer> {
+    fn from(gif: Gif) -> Element<'a, Message, Theme, Renderer> {
         Element::new(gif)
     }
 }
