@@ -13,8 +13,8 @@ use iced_widget::core::image::{self, FilterMethod, Handle};
 use iced_widget::core::mouse::Cursor;
 use iced_widget::core::widget::{tree, Tree};
 use iced_widget::core::{
-    layout, renderer, window, ContentFit, Element, Event, Layout, Length, Rectangle,
-    Rotation, Shell, Size, Widget,
+    layout, renderer, window, ContentFit, Element, Event, Layout, Length, Rectangle, Rotation,
+    Shell, Size, Widget,
 };
 use image_rs::codecs::gif;
 use image_rs::{AnimationDecoder, ImageDecoder};
@@ -130,6 +130,7 @@ struct State {
     index: usize,
     current: Current,
     total_bytes: u64,
+    looped: usize,
 }
 
 struct Current {
@@ -160,11 +161,12 @@ pub struct Gif {
     opacity: f32,
     scale: f32,
     expand: bool,
+    max_loops: Option<usize>,
 }
 
 impl Gif {
     /// Creates a new [`Gif`] with the given [`Frames`]
-    pub fn new(frames: Arc<Frames>) -> Self {
+    pub fn new(frames: Arc<Frames>, max_loops: Option<usize>) -> Self {
         Gif {
             frames,
             width: Length::Shrink,
@@ -177,6 +179,7 @@ impl Gif {
             opacity: 1.0,
             scale: 1.0,
             expand: false,
+            max_loops,
         }
     }
     /// Sets the width of the [`Image`] boundaries.
@@ -287,6 +290,7 @@ where
             index: 0,
             current: self.frames.first.clone().into(),
             total_bytes: self.frames.total_bytes,
+            looped: 0,
         })
     }
 
@@ -303,6 +307,7 @@ where
                 index: 0,
                 current: self.frames.first.clone().into(),
                 total_bytes: self.frames.total_bytes,
+                looped: state.looped.clone(),
             };
         }
     }
@@ -338,10 +343,24 @@ where
     ) {
         let state = tree.state.downcast_mut::<State>();
 
+        let should_loop = if let Some(max_loops) = self.max_loops {
+            state.looped <= max_loops
+        } else {
+            true
+        };
+
+        if !should_loop {
+            return;
+        }
+
         if let Event::Window(window::Event::RedrawRequested(now)) = event {
             let elapsed = now.duration_since(state.current.started);
 
             if elapsed > state.current.frame.delay {
+                if state.index == 0 {
+                    state.looped = state.looped.saturating_add(1);
+                }
+
                 state.index = (state.index + 1) % self.frames.frames.len();
 
                 state.current = self.frames.frames[state.index].clone().into();

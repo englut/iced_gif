@@ -50,7 +50,7 @@ impl App {
 
     fn view(&self) -> Element<'_, Message> {
         if let Some(frames) = self.frames.as_ref() {
-            container(gif(frames.clone()))
+            container(gif(frames.clone(), Some(3)))
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .into()
