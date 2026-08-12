@@ -1,6 +1,6 @@
 [package]
 name = "iced_gif"
-version = "0.14.0"
+version = "0.15.0-dev"
 edition = "2021"
 authors = ["tarkah <admin@tarkah.dev>"]
 description = "A GIF widget for Iced"
@@ -21,9 +21,10 @@ default = ["async-fs"]
 tokio = ["dep:tokio"]
 
 [dependencies]
-iced_widget = { version = "0.14",  features = ["image"] }
-iced_futures = "0.14.0"
-iced_runtime = "0.14.0"
+iced = { version = "0.15.0-dev",  features = ["image"] }
+iced_widget = "0.15.0-dev"
+iced_futures = "0.15.0-dev"
+iced_runtime = "0.15.0-dev"
 thiserror = "1.0"
 
 [dependencies.async-fs]
@@ -39,3 +40,9 @@ features = ["fs", "io-util"]
 package = "image"
 version = "0.24"
 features = ["gif"]
+
+[patch.crates-io]
+iced = { git = "https://github.com/squidowl/iced", rev = "8d458d2495f79cc2c90b31a2997139a46e5c0ae4" }
+iced_widget = { git = "https://github.com/squidowl/iced", rev = "8d458d2495f79cc2c90b31a2997139a46e5c0ae4" }
+iced_futures = { git = "https://github.com/squidowl/iced", rev = "8d458d2495f79cc2c90b31a2997139a46e5c0ae4" }
+iced_runtime = { git = "https://github.com/squidowl/iced", rev = "8d458d2495f79cc2c90b31a2997139a46e5c0ae4" }

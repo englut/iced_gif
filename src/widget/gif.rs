@@ -12,7 +12,7 @@ use iced_widget::core::image::{self, FilterMethod, Handle};
 use iced_widget::core::mouse::Cursor;
 use iced_widget::core::widget::{tree, Tree};
 use iced_widget::core::{
-    layout, renderer, window, Clipboard, ContentFit, Element, Event, Layout, Length, Rectangle,
+    layout, renderer, window, ContentFit, Element, Event, Layout, Length, Rectangle,
     Rotation, Shell, Size, Widget,
 };
 use image_rs::codecs::gif;
@@ -92,7 +92,6 @@ impl Frames {
 
         let frames = decoder
             .into_frames()
-            .into_iter()
             .map(|result| result.map(Frame::from))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -288,7 +287,7 @@ where
         })
     }
 
-    fn diff(&self, tree: &mut Tree) {
+    fn diff(&mut self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<State>();
 
         // Reset state if new gif Frames is used w/
@@ -331,7 +330,6 @@ where
         _layout: Layout<'_>,
         _cursor: Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
