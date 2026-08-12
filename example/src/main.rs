@@ -48,7 +48,7 @@ impl App {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        if let Some(frames) = self.frames.as_ref() {
+        if let Some(frames) = self.frames.clone() {
             container(gif(frames))
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)

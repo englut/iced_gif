@@ -12,8 +12,8 @@ use iced_widget::core::image::{self, FilterMethod, Handle};
 use iced_widget::core::mouse::Cursor;
 use iced_widget::core::widget::{tree, Tree};
 use iced_widget::core::{
-    layout, renderer, window, ContentFit, Element, Event, Layout, Length, Rectangle,
-    Rotation, Shell, Size, Widget,
+    layout, renderer, window, ContentFit, Element, Event, Layout, Length, Rectangle, Rotation,
+    Shell, Size, Widget,
 };
 use image_rs::codecs::gif;
 use image_rs::{AnimationDecoder, ImageDecoder};
@@ -35,6 +35,7 @@ pub enum Error {
 }
 
 /// The frames of a decoded gif
+#[derive(Clone)]
 pub struct Frames {
     first: Frame,
     frames: Vec<Frame>,
@@ -145,8 +146,8 @@ impl From<Frame> for Current {
 
 /// A frame that displays a GIF while keeping aspect ratio
 #[derive(Debug)]
-pub struct Gif<'a> {
-    frames: &'a Frames,
+pub struct Gif {
+    frames: Frames,
     width: Length,
     height: Length,
     crop: Option<Rectangle<u32>>,
@@ -159,9 +160,9 @@ pub struct Gif<'a> {
     expand: bool,
 }
 
-impl<'a> Gif<'a> {
+impl Gif {
     /// Creates a new [`Gif`] with the given [`Frames`]
-    pub fn new(frames: &'a Frames) -> Self {
+    pub fn new(frames: Frames) -> Self {
         Gif {
             frames,
             width: Length::Shrink,
@@ -265,9 +266,16 @@ impl<'a> Gif<'a> {
         self.border_radius = border_radius.into();
         self
     }
+
+    /// Is the gif an animation?
+    ///
+    /// Checks if the gif has more than one frame
+    pub fn is_animated(&self) -> bool {
+        self.frames.frames.len() > 1
+    }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Gif<'a>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Gif
 where
     Renderer: image::Renderer<Handle = Handle>,
 {
@@ -379,11 +387,11 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Gif<'a>> for Element<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> From<Gif> for Element<'a, Message, Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = Handle> + 'a,
 {
-    fn from(gif: Gif<'a>) -> Element<'a, Message, Theme, Renderer> {
+    fn from(gif: Gif) -> Element<'a, Message, Theme, Renderer> {
         Element::new(gif)
     }
 }
