@@ -10,10 +10,10 @@ use iced_widget::core::border;
 use iced_widget::core::image::Image;
 use iced_widget::core::image::{self, FilterMethod, Handle};
 use iced_widget::core::mouse::Cursor;
-use iced_widget::core::widget::{tree, Tree};
+use iced_widget::core::widget::{Tree, tree};
 use iced_widget::core::{
-    layout, renderer, window, Clipboard, ContentFit, Element, Event, Layout, Length, Rectangle,
-    Rotation, Shell, Size, Widget,
+    ContentFit, Element, Event, Layout, Length, Rectangle, Rotation, Shell, Size, Widget, layout,
+    renderer, window,
 };
 use image_rs::codecs::gif;
 use image_rs::{AnimationDecoder, ImageDecoder};
@@ -35,6 +35,7 @@ pub enum Error {
 }
 
 /// The frames of a decoded gif
+#[derive(Clone)]
 pub struct Frames {
     first: Frame,
     frames: Vec<Frame>,
@@ -92,7 +93,6 @@ impl Frames {
 
         let frames = decoder
             .into_frames()
-            .into_iter()
             .map(|result| result.map(Frame::from))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -133,6 +133,7 @@ struct State {
 struct Current {
     frame: Frame,
     started: Instant,
+    allocation: Option<image::Allocation>,
 }
 
 impl From<Frame> for Current {
@@ -140,14 +141,15 @@ impl From<Frame> for Current {
         Self {
             started: Instant::now(),
             frame,
+            allocation: None,
         }
     }
 }
 
 /// A frame that displays a GIF while keeping aspect ratio
 #[derive(Debug)]
-pub struct Gif<'a> {
-    frames: &'a Frames,
+pub struct Gif {
+    frames: Frames,
     width: Length,
     height: Length,
     crop: Option<Rectangle<u32>>,
@@ -160,9 +162,9 @@ pub struct Gif<'a> {
     expand: bool,
 }
 
-impl<'a> Gif<'a> {
+impl Gif {
     /// Creates a new [`Gif`] with the given [`Frames`]
-    pub fn new(frames: &'a Frames) -> Self {
+    pub fn new(frames: Frames) -> Self {
         Gif {
             frames,
             width: Length::Shrink,
@@ -266,9 +268,16 @@ impl<'a> Gif<'a> {
         self.border_radius = border_radius.into();
         self
     }
+
+    /// Is the gif an animation?
+    ///
+    /// Checks if the gif has more than one frame
+    pub fn is_animated(&self) -> bool {
+        self.frames.frames.len() > 1
+    }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Gif<'a>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Gif
 where
     Renderer: image::Renderer<Handle = Handle>,
 {
@@ -288,7 +297,7 @@ where
         })
     }
 
-    fn diff(&self, tree: &mut Tree) {
+    fn diff(&mut self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<State>();
 
         // Reset state if new gif Frames is used w/
@@ -330,8 +339,7 @@ where
         event: &Event,
         _layout: Layout<'_>,
         _cursor: Cursor,
-        _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
+        renderer: &Renderer,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
@@ -341,9 +349,24 @@ where
             let elapsed = now.duration_since(state.current.started);
 
             if elapsed > state.current.frame.delay {
-                state.index = (state.index + 1) % self.frames.frames.len();
+                let next_index = (state.index + 1) % self.frames.frames.len();
 
-                state.current = self.frames.frames[state.index].clone().into();
+                // Load the next frame before changing state in order to avoid
+                // flickering/strobing
+                let allocation = renderer
+                    .load_image(&self.frames.frames[next_index].handle)
+                    .ok();
+
+                state.index = next_index;
+
+                // Persist the previous allocation if allocation of the next
+                // frame fails, to avoid flickering/strobing when bad frames are
+                // present
+                state.current = Current {
+                    started: Instant::now(),
+                    frame: self.frames.frames[state.index].clone(),
+                    allocation: allocation.or(state.current.allocation.clone()),
+                };
 
                 shell.request_redraw_at(*now + state.current.frame.delay);
             } else {
@@ -366,10 +389,17 @@ where
     ) {
         let state = tree.state.downcast_ref::<State>();
 
+        let handle = state
+            .current
+            .allocation
+            .as_ref()
+            .map(image::Allocation::handle)
+            .unwrap_or(&state.current.frame.handle);
+
         iced_widget::image::draw(
             renderer,
             layout,
-            &state.current.frame.handle,
+            handle,
             self.crop,
             self.border_radius,
             self.content_fit,
@@ -381,11 +411,11 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Gif<'a>> for Element<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> From<Gif> for Element<'a, Message, Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = Handle> + 'a,
 {
-    fn from(gif: Gif<'a>) -> Element<'a, Message, Theme, Renderer> {
+    fn from(gif: Gif) -> Element<'a, Message, Theme, Renderer> {
         Element::new(gif)
     }
 }
